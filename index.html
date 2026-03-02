@@ -1,0 +1,191 @@
+import React, { useEffect, useRef, useState } from "react";
+import * as d3 from "d3";
+import { feature } from "topojson-client";
+
+export default function WorldGuessArcade() {
+  const svgRef = useRef();
+  const [countries, setCountries] = useState([]);
+  const [current, setCurrent] = useState(null);
+  const [round, setRound] = useState(0);
+  const [score, setScore] = useState(0);
+  const [gameOver, setGameOver] = useState(false);
+  const [playerName, setPlayerName] = useState("");
+  const [leaderboard, setLeaderboard] = useState([]);
+  const totalRounds = 5;
+
+  useEffect(() => {
+    const stored = JSON.parse(localStorage.getItem("geoLeaderboard") || "[]");
+    setLeaderboard(stored);
+
+    fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
+      .then(res => res.json())
+      .then(world => {
+        const countriesData = feature(world, world.objects.countries).features;
+        setCountries(countriesData);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!countries.length) return;
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    const svg = d3.select(svgRef.current)
+      .attr("width", width)
+      .attr("height", height);
+
+    const projection = d3.geoNaturalEarth1()
+      .scale(width / 6.3)
+      .translate([width / 2, height / 2]);
+
+    const path = d3.geoPath(projection);
+    const colorScale = d3.scaleOrdinal(d3.schemeTableau10);
+
+    svg.selectAll("path")
+      .data(countries)
+      .join("path")
+      .attr("d", path)
+      .attr("fill", (d, i) => colorScale(i % 10))
+      .attr("stroke", "#111")
+      .attr("stroke-width", 0.5)
+      .style("pointer-events", "all");
+
+    svg.on("click", function (event) {
+      if (!current || gameOver) return;
+
+      const coords = projection.invert(d3.pointer(event));
+      const centroid = d3.geoCentroid(current);
+      const distance = geoDistanceMiles(coords, centroid);
+
+      setScore(prev => prev + distance);
+
+      if (round === totalRounds) {
+        setGameOver(true);
+        setCurrent(null);
+      } else {
+        nextRound();
+      }
+    });
+  }, [countries, current, round, gameOver]);
+
+  function geoDistanceMiles(a, b) {
+    const R = 3958.8;
+    const lat1 = a[1] * Math.PI / 180;
+    const lat2 = b[1] * Math.PI / 180;
+    const dLat = lat2 - lat1;
+    const dLon = (b[0] - a[0]) * Math.PI / 180;
+
+    const h = Math.sin(dLat/2) ** 2 +
+      Math.cos(lat1) * Math.cos(lat2) *
+      Math.sin(dLon/2) ** 2;
+
+    const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1-h));
+    return R * c;
+  }
+
+  function startGame() {
+    setScore(0);
+    setRound(1);
+    setGameOver(false);
+    setPlayerName("");
+    setCurrent(randomCountry());
+  }
+
+  function nextRound() {
+    setRound(r => r + 1);
+    setCurrent(randomCountry());
+  }
+
+  function randomCountry() {
+    return countries[Math.floor(Math.random() * countries.length)];
+  }
+
+  function submitScore() {
+    if (playerName.length !== 3) return;
+
+    const entry = { name: playerName.toUpperCase(), score: Math.round(score) };
+
+    setLeaderboard(prev => {
+      const updated = [...prev, entry]
+        .sort((a, b) => a.score - b.score)
+        .slice(0, 10);
+
+      localStorage.setItem("geoLeaderboard", JSON.stringify(updated));
+      return updated;
+    });
+
+    setPlayerName("");
+  }
+
+  return (
+    <div className="w-screen h-screen bg-black text-white relative">
+      <svg ref={svgRef} className="absolute top-0 left-0 z-0 pointer-events-none" />
+
+      <div className="absolute top-6 left-6 bg-black/70 p-4 rounded-2xl shadow-xl z-50">
+        {!current && !gameOver && (
+          <button
+            onClick={startGame}
+            className="bg-white text-black px-4 py-2 rounded-xl"
+          >
+            Start Game
+          </button>
+        )}
+
+        {current && (
+          <div>
+            <div className="text-lg">Locate:</div>
+            <div className="text-xl font-bold">
+              {current.properties.name || "Unknown"}
+            </div>
+            <div className="mt-2">Round {round} / {totalRounds}</div>
+            <div>Total Miles: {Math.round(score)}</div>
+          </div>
+        )}
+
+        {gameOver && (
+          <div className="relative z-50">
+            <div className="text-xl font-bold">Game Over</div>
+            <div>Final Score: {Math.round(score)}</div>
+
+            <div className="mt-3">
+              <input
+                maxLength={3}
+                value={playerName}
+                onChange={e =>
+                  setPlayerName(
+                    e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase()
+                  )
+                }
+                placeholder="AAA"
+                className="text-black px-2 py-1 rounded-xl w-20 text-center"
+              />
+              <button
+                onClick={submitScore}
+                className="ml-2 bg-white text-black px-3 py-1 rounded-xl"
+              >
+                Submit
+              </button>
+            </div>
+
+            <div className="mt-4">
+              <div className="font-bold">Leaderboard</div>
+              {leaderboard.map((entry, i) => (
+                <div key={i}>
+                  {i + 1}. {entry.name} — {entry.score}
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={startGame}
+              className="mt-4 bg-white text-black px-4 py-2 rounded-xl"
+            >
+              Play Again
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
