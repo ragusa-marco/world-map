@@ -124,13 +124,13 @@ svg.addEventListener('click', e => {
 
 function startGame() {
   score = 0;
-  round = 1;
+  round = 0;
   nextRound();
 }
 
 function nextRound() {
-  current = randomCountry();
   round++;
+  current = randomCountry();
   renderUI();
 }
 
@@ -159,7 +159,7 @@ function renderUI(gameOver=false) {
     ui.innerHTML = `
       <div>Locate:</div>
       <div><strong>${current.properties.name}</strong></div>
-      <div>Round ${round-1} / ${totalRounds}</div>
+      <div>Round ${round} / ${totalRounds}</div>
       <div>Total Miles: ${Math.round(score)}</div>
     `;
   } else {
