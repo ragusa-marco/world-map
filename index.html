@@ -1,191 +1,197 @@
-import React, { useEffect, useRef, useState } from "react";
-import * as d3 from "d3";
-import { feature } from "topojson-client";
-
-export default function WorldGuessArcade() {
-  const svgRef = useRef();
-  const [countries, setCountries] = useState([]);
-  const [current, setCurrent] = useState(null);
-  const [round, setRound] = useState(0);
-  const [score, setScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
-  const [playerName, setPlayerName] = useState("");
-  const [leaderboard, setLeaderboard] = useState([]);
-  const totalRounds = 5;
-
-  useEffect(() => {
-    const stored = JSON.parse(localStorage.getItem("geoLeaderboard") || "[]");
-    setLeaderboard(stored);
-
-    fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
-      .then(res => res.json())
-      .then(world => {
-        const countriesData = feature(world, world.objects.countries).features;
-        setCountries(countriesData);
-      });
-  }, []);
-
-  useEffect(() => {
-    if (!countries.length) return;
-
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-
-    const svg = d3.select(svgRef.current)
-      .attr("width", width)
-      .attr("height", height);
-
-    const projection = d3.geoNaturalEarth1()
-      .scale(width / 6.3)
-      .translate([width / 2, height / 2]);
-
-    const path = d3.geoPath(projection);
-    const colorScale = d3.scaleOrdinal(d3.schemeTableau10);
-
-    svg.selectAll("path")
-      .data(countries)
-      .join("path")
-      .attr("d", path)
-      .attr("fill", (d, i) => colorScale(i % 10))
-      .attr("stroke", "#111")
-      .attr("stroke-width", 0.5)
-      .style("pointer-events", "all");
-
-    svg.on("click", function (event) {
-      if (!current || gameOver) return;
-
-      const coords = projection.invert(d3.pointer(event));
-      const centroid = d3.geoCentroid(current);
-      const distance = geoDistanceMiles(coords, centroid);
-
-      setScore(prev => prev + distance);
-
-      if (round === totalRounds) {
-        setGameOver(true);
-        setCurrent(null);
-      } else {
-        nextRound();
-      }
-    });
-  }, [countries, current, round, gameOver]);
-
-  function geoDistanceMiles(a, b) {
-    const R = 3958.8;
-    const lat1 = a[1] * Math.PI / 180;
-    const lat2 = b[1] * Math.PI / 180;
-    const dLat = lat2 - lat1;
-    const dLon = (b[0] - a[0]) * Math.PI / 180;
-
-    const h = Math.sin(dLat/2) ** 2 +
-      Math.cos(lat1) * Math.cos(lat2) *
-      Math.sin(dLon/2) ** 2;
-
-    const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1-h));
-    return R * c;
-  }
-
-  function startGame() {
-    setScore(0);
-    setRound(1);
-    setGameOver(false);
-    setPlayerName("");
-    setCurrent(randomCountry());
-  }
-
-  function nextRound() {
-    setRound(r => r + 1);
-    setCurrent(randomCountry());
-  }
-
-  function randomCountry() {
-    return countries[Math.floor(Math.random() * countries.length)];
-  }
-
-  function submitScore() {
-    if (playerName.length !== 3) return;
-
-    const entry = { name: playerName.toUpperCase(), score: Math.round(score) };
-
-    setLeaderboard(prev => {
-      const updated = [...prev, entry]
-        .sort((a, b) => a.score - b.score)
-        .slice(0, 10);
-
-      localStorage.setItem("geoLeaderboard", JSON.stringify(updated));
-      return updated;
-    });
-
-    setPlayerName("");
-  }
-
-  return (
-    <div className="w-screen h-screen bg-black text-white relative">
-      <svg ref={svgRef} className="absolute top-0 left-0 z-0 pointer-events-none" />
-
-      <div className="absolute top-6 left-6 bg-black/70 p-4 rounded-2xl shadow-xl z-50">
-        {!current && !gameOver && (
-          <button
-            onClick={startGame}
-            className="bg-white text-black px-4 py-2 rounded-xl"
-          >
-            Start Game
-          </button>
-        )}
-
-        {current && (
-          <div>
-            <div className="text-lg">Locate:</div>
-            <div className="text-xl font-bold">
-              {current.properties.name || "Unknown"}
-            </div>
-            <div className="mt-2">Round {round} / {totalRounds}</div>
-            <div>Total Miles: {Math.round(score)}</div>
-          </div>
-        )}
-
-        {gameOver && (
-          <div className="relative z-50">
-            <div className="text-xl font-bold">Game Over</div>
-            <div>Final Score: {Math.round(score)}</div>
-
-            <div className="mt-3">
-              <input
-                maxLength={3}
-                value={playerName}
-                onChange={e =>
-                  setPlayerName(
-                    e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase()
-                  )
-                }
-                placeholder="AAA"
-                className="text-black px-2 py-1 rounded-xl w-20 text-center"
-              />
-              <button
-                onClick={submitScore}
-                className="ml-2 bg-white text-black px-3 py-1 rounded-xl"
-              >
-                Submit
-              </button>
-            </div>
-
-            <div className="mt-4">
-              <div className="font-bold">Leaderboard</div>
-              {leaderboard.map((entry, i) => (
-                <div key={i}>
-                  {i + 1}. {entry.name} — {entry.score}
-                </div>
-              ))}
-            </div>
-
-            <button
-              onClick={startGame}
-              className="mt-4 bg-white text-black px-4 py-2 rounded-xl"
-            >
-              Play Again
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>World Guess Arcade</title>
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  background: black;
+  color: white;
+  font-family: Arial, sans-serif;
+  overflow: hidden;
 }
+#ui {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: rgba(0,0,0,0.7);
+  padding: 15px;
+  border-radius: 12px;
+  z-index: 10;
+}
+button {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+}
+input {
+  background: black;
+  color: white;
+  border: 1px solid white;
+  text-align: center;
+  width: 60px;
+  padding: 4px;
+  border-radius: 6px;
+}
+svg { position:absolute; top:0; left:0; }
+</style>
+</head>
+<body>
+
+<svg id="map"></svg>
+
+<div id="ui"></div>
+
+<script>
+const svg = document.getElementById('map');
+const ui = document.getElementById('ui');
+const width = window.innerWidth;
+const height = window.innerHeight;
+svg.setAttribute('width', width);
+svg.setAttribute('height', height);
+
+let countries = [];
+let current = null;
+let round = 0;
+let totalRounds = 5;
+let score = 0;
+let leaderboard = JSON.parse(localStorage.getItem('geoLeaderboard') || '[]');
+
+function projection([lon, lat]) {
+  const x = (lon + 180) * (width / 360);
+  const y = (90 - lat) * (height / 180);
+  return [x, y];
+}
+
+function geoDistanceMiles(a, b) {
+  const R = 3958.8;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b[1] - a[1]);
+  const dLon = toRad(b[0] - a[0]);
+  const lat1 = toRad(a[1]);
+  const lat2 = toRad(b[1]);
+  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1-h));
+}
+
+function randomCountry() {
+  return countries[Math.floor(Math.random() * countries.length)];
+}
+
+function drawMap(data) {
+  countries = data.features;
+  countries.forEach((c, i) => {
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    const coords = c.geometry.coordinates;
+    let d = '';
+
+    function drawPolygon(poly) {
+      poly.forEach(ring => {
+        ring.forEach((pt, idx) => {
+          const [x,y] = projection(pt);
+          d += (idx===0?'M':'L') + x + ' ' + y + ' ';
+        });
+        d += 'Z ';
+      });
+    }
+
+    if (c.geometry.type === 'Polygon') drawPolygon(coords);
+    if (c.geometry.type === 'MultiPolygon') coords.forEach(drawPolygon);
+
+    path.setAttribute('d', d);
+    path.setAttribute('fill', `hsl(${i*15%360},60%,50%)`);
+    path.setAttribute('stroke', '#111');
+    svg.appendChild(path);
+  });
+}
+
+svg.addEventListener('click', e => {
+  if (!current) return;
+  const rect = svg.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const lon = x / (width/360) - 180;
+  const lat = 90 - y / (height/180);
+  const centroid = current.properties.centroid;
+  score += geoDistanceMiles([lon,lat], centroid);
+
+  if (round >= totalRounds) endGame();
+  else nextRound();
+});
+
+function startGame() {
+  score = 0;
+  round = 1;
+  nextRound();
+}
+
+function nextRound() {
+  current = randomCountry();
+  round++;
+  renderUI();
+}
+
+function endGame() {
+  current = null;
+  renderUI(true);
+}
+
+function submitScore() {
+  const name = document.getElementById('nameInput').value.toUpperCase();
+  if (name.length !== 3) return;
+  leaderboard.push({name, score: Math.round(score)});
+  leaderboard.sort((a,b)=>a.score-b.score);
+  leaderboard = leaderboard.slice(0,10);
+  localStorage.setItem('geoLeaderboard', JSON.stringify(leaderboard));
+  renderUI(true);
+}
+
+function renderUI(gameOver=false) {
+  if (!current && !gameOver) {
+    ui.innerHTML = `<button onclick="startGame()">Start Game</button>`;
+    return;
+  }
+
+  if (!gameOver) {
+    ui.innerHTML = `
+      <div>Locate:</div>
+      <div><strong>${current.properties.name}</strong></div>
+      <div>Round ${round-1} / ${totalRounds}</div>
+      <div>Total Miles: ${Math.round(score)}</div>
+    `;
+  } else {
+    ui.innerHTML = `
+      <div><strong>Game Over</strong></div>
+      <div>Final Score: ${Math.round(score)}</div>
+      <input id="nameInput" maxlength="3" placeholder="AAA" />
+      <button onclick="submitScore()">Submit</button>
+      <div style="margin-top:10px"><strong>Leaderboard</strong></div>
+      ${leaderboard.map((e,i)=>`<div>${i+1}. ${e.name} — ${e.score}</div>`).join('')}
+      <button onclick="startGame()" style="margin-top:10px">Play Again</button>
+    `;
+  }
+}
+
+fetch('https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson')
+  .then(res=>res.json())
+  .then(data=>{
+    data.features.forEach(f=>{
+      const coords = f.geometry.coordinates;
+      let lonSum=0, latSum=0, count=0;
+      function collect(poly){
+        poly.forEach(r=>r.forEach(p=>{lonSum+=p[0]; latSum+=p[1]; count++;}));
+      }
+      if(f.geometry.type==='Polygon') collect(coords);
+      if(f.geometry.type==='MultiPolygon') coords.forEach(collect);
+      f.properties.centroid=[lonSum/count, latSum/count];
+    });
+    drawMap(data);
+    renderUI();
+  });
+</script>
+
+</body>
+</html>
